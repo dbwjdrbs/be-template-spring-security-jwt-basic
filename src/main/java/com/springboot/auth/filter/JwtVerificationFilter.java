@@ -1,0 +1,57 @@
+package com.springboot.auth.filter;
+
+import com.springboot.auth.jwt.JwtTokenizer;
+import com.springboot.auth.utils.JwtAuthorityUtils;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import javax.servlet.FilterChain;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+
+public class JwtVerificationFilter extends OncePerRequestFilter {
+    private final JwtTokenizer jwtTokenizer;
+    private final JwtAuthorityUtils authorityUtils;
+
+    public JwtVerificationFilter(JwtTokenizer jwtTokenizer, JwtAuthorityUtils authorityUtils) {
+        this.jwtTokenizer = jwtTokenizer;
+        this.authorityUtils = authorityUtils;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws ServletException, IOException {
+        Map<String, Object> claims = verifyJws(request);
+        setAuthenticationToContext(claims);
+
+        filterChain.doFilter(request, response); // 다음 작업 수행
+    }
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String authorization = request.getHeader("Authorization");
+
+        return authorization == null || !authorization.startsWith("Bearer");
+    }
+
+    private Map<String, Object> verifyJws(HttpServletRequest request) {
+        String jws = request.getHeader("Authorization").replace("Bearer ", "");
+        String base64EncodedSecretKey = jwtTokenizer.encodeBase64SecretKey(jwtTokenizer.getSecretKey());
+        return jwtTokenizer.getClaims(jws, base64EncodedSecretKey).getBody();
+    }
+
+    private void setAuthenticationToContext(Map<String, Object> claims) {
+        String username = (String) claims.get("username");
+        List<GrantedAuthority> authorities = authorityUtils.createAuthorities((List) claims.get("roles"));
+        Authentication authenticaion = new UsernamePasswordAuthenticationToken(username, null, authorities);
+        // 검증은 토큰으로 하기 때문에 패스워드는 null 처리함.
+        SecurityContextHolder.getContext().setAuthentication(authenticaion);
+    }
+}
